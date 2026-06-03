@@ -26,7 +26,7 @@ The skill targets the right subreddits automatically, fetches the most-discussed
 
 Two MCP servers with complementary coverage:
 
-- **PullPush MCP** — searches the PullPush Reddit archive (coverage up to ~May 2025). No rate limits, fast. Used first and for the bulk of queries. Runs searches in parallel across subreddits.
+- **PullPush MCP** — searches the PullPush Reddit archive (coverage up to ~May 2025). Rate limit: 15 req/min soft, 30 hard, 1000/hour. Used first and for the bulk of queries. Runs searches in parallel across subreddits.
 - **Reddit Buddy MCP** — hits Reddit's live `.json` endpoints directly (no API key needed). Covers the last ~13 months that PullPush doesn't have. Used systematically as a complement, not just as a fallback.
 
 The skill picks 1-3 relevant subreddits per query (never `r/all`), runs searches in parallel, reads comments on the 1-2 most relevant posts, and synthesizes. For "best of" queries it uses `browse_subreddit` with `sort=top` to get community-validated content directly.
@@ -91,3 +91,9 @@ The easiest way is to use the Claude Code skill-creator skill, or manually drop 
 - The skill is **never auto-triggered** — it only runs when you explicitly call `/reddit`. This is intentional.
 - PullPush archive ends ~May 2025. Reddit Buddy covers everything after. Both are used on every query.
 - No Reddit account or API credentials needed.
+
+## Future: Arctic-Shift
+
+[Arctic-Shift](https://github.com/ArthurHeitmann/arctic_shift) is another Reddit archive project, complementary to PullPush. It performs better on simple queries and served as the main alternative when PullPush went down for several months in 2023. It's worth knowing about as a fallback if PullPush ever goes offline again.
+
+There is no MCP server for Arctic-Shift yet. If one gets built, it would be worth adding alongside PullPush in this skill.

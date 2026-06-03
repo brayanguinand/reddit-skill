@@ -10,7 +10,7 @@ The user asked: **$ARGUMENTS**
 
 ## Tools available
 
-- **`mcp__pullpush__search_submissions`** — PullPush archive (posts up to ~May 2025). Fast, no rate limits. Use for historical depth.
+- **`mcp__pullpush__search_submissions`** — PullPush archive (posts up to ~May 2025). Rate limit: 15 req/min soft, 30 hard, 1000/hour. Use for historical depth.
 - **`mcp__pullpush__search_comments`** — searches comments by keyword across the archive. Use only for broad comment-level searches (no post filtering by ID).
 - **`mcp__reddit-buddy__search_reddit`** — real-time Reddit search (covers everything, including the last 13 months missing from PullPush). Use for recent content or as complement.
 - **`mcp__reddit-buddy__browse_subreddit`** — fetches top/hot/new posts from a subreddit. Best for "what's the best X" queries: use `sort=top&time=year` to get community-validated content directly.
@@ -29,6 +29,12 @@ Examples:
 If the query is in French or another language, also consider subreddits in that language.
 
 **For "best of" queries** (recommendations, rankings): prefer `browse_subreddit` with `sort=top&time=year` — it gives directly the most upvoted content without keyword guessing.
+
+**For targeted queries**: check if the subreddit uses flairs and filter by the most relevant one. Examples:
+- `r/personalfinance` → flair "Investing", "Debt", "Retirement"
+- `r/Python` → flair "Discussion", "Tutorial"
+- `r/france` → flair "Société", "Économie"
+Use the `flair` parameter in `mcp__reddit-buddy__search_reddit` when a specific flair would sharply reduce noise.
 
 ## Step 2 — Search posts (run in parallel)
 
