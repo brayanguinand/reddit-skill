@@ -44,23 +44,29 @@ If the query is in French or another language, also consider subreddits in that 
 - `r/france` → flair "Société", "Économie"
 Use the `flair` parameter in `mcp__reddit-buddy__search_reddit` when a specific flair would sharply reduce noise.
 
-## Step 2 — Search posts (run in parallel)
+## Step 2 — Search posts
 
-**Always run subreddit searches in parallel** — fire all calls in a single message, not sequentially.
+Each source covers an **exclusive, non-overlapping window**. Do NOT query two sources for the same period — they have the same data.
 
-Run searches in parallel across sources. Choose the right tool by date:
+```
+2005 ──────────── May 2025   →  PullPush only
+         May 2025 ── Feb 2026  →  Arctic Shift only
+                  Feb 2026 ── now  →  Reddit Buddy only
+```
 
-**Pre-May 2025 → PullPush**
+**For most queries: run PullPush + Arctic Shift in parallel** (they cover complementary windows, not the same content). Add Reddit Buddy only if recency matters.
+
+**PullPush** (2005 – May 2025):
 - `mcp__pullpush__search_submissions` with `size: 15`, `sort_type: num_comments`, `num_comments: ">3"`
 - Use `title` param for title-only matching (cleaner than `q`)
 
-**May 2025 – February 2026 → Arctic Shift** (preferred over reddit-buddy for this window)
+**Arctic Shift** (May 2025 – February 2026):
 - `mcp__arctic-shift__search_submissions` with `limit: 15`, `sort_by: num_comments`
 - Supports `link_flair_text` for flair filtering
 
-**Post-February 2026 → Reddit Buddy** (only if recency matters, may be unavailable)
+**Reddit Buddy** (February 2026 – today) — only if recency matters:
 - `mcp__reddit-buddy__search_reddit` with `sort: "comments"`, `time: "year"`
-- If unavailable: mention it to the user and proceed with archive sources only
+- May be unavailable (Reddit IP blocking). If down: proceed without it and note the gap to the user.
 
 **Select the 3-5 most relevant posts** across all sources based on title relevance and comment count.
 
