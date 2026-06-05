@@ -2,7 +2,7 @@
 
 A Claude Code skill that gives you real Reddit search from any session — no Reddit API credentials required.
 
-Reddit blocks web crawlers and `site:reddit.com` doesn't work in search. This skill bypasses that by using two MCP servers that talk directly to Reddit's data: one for the archive (fast, no rate limits), one for real-time results. You get actual threads and comments, not SEO aggregators.
+Reddit blocks web crawlers and `site:reddit.com` doesn't work in search. This skill bypasses that by using MCP servers that talk directly to Reddit's data. You get actual threads and comments, not SEO aggregators.
 
 ## Usage
 
@@ -15,36 +15,53 @@ Once installed, invoke it with:
 Examples:
 ```
 /reddit best accounting software for freelancers in France
-/reddit mechanical keyboard under $150 reddit
+/reddit mechanical keyboard under $150
 /reddit is Lisbon still affordable for expats in 2025
 /reddit airfryer vs convection oven which is actually better
+/reddit FastAPI vs Django for a REST API in 2026
 ```
 
-The skill targets the right subreddits automatically, fetches the most-discussed threads, reads the top comments, and returns a synthesized answer with source links — not a raw data dump.
+The skill targets the right subreddits automatically, fetches the most-discussed or highest-scored threads, reads the top comments, and returns a synthesized answer with source links — not a raw data dump.
 
 ## How it works
 
-Two MCP servers with complementary coverage:
+Three MCP servers with complementary coverage:
 
-- **PullPush MCP** — searches the PullPush Reddit archive (coverage up to ~May 2025). Rate limit: 15 req/min soft, 30 hard, 1000/hour. Used first and for the bulk of queries. Runs searches in parallel across subreddits.
-- **Reddit Buddy MCP** — hits Reddit's live `.json` endpoints directly (no API key needed). Covers the last ~13 months that PullPush doesn't have. Used systematically as a complement, not just as a fallback.
+```
+2005 ──────────── May 2025   →  PullPush (archive)
+May 2025 ────────────── now  →  Arctic Shift (main source, ~24-48h indexing lag)
+                              →  Reddit Buddy (real-time, frequently blocked by Reddit)
+```
 
-The skill picks 1-3 relevant subreddits per query (never `r/all`), runs searches in parallel, reads comments on the 1-2 most relevant posts, and synthesizes. For "best of" queries it uses `browse_subreddit` with `sort=top` to get community-validated content directly.
+- **PullPush MCP** — searches the PullPush Reddit archive (coverage up to ~May 2025). Rate limit: 15 req/min soft, 30 hard, 1000/hour. Used for pre-2025 content.
+- **Arctic Shift MCP** — main source for everything from May 2025 to today. Full engagement data (scores, comment counts) for posts older than ~48h. Very recent posts (< 24-48h) are indexed but show `score: 1, comments: 0` until engagement data catches up.
+- **Reddit Buddy MCP** — hits Reddit's live endpoints in real time. Currently blocked by Reddit on most queries (access forbidden errors). Included as a last resort for the last 24-48h window; the skill tries it once and skips gracefully if blocked.
 
-### Why no Reddit API credentials?
+The skill picks 1-3 relevant subreddits per query (never `r/all`), runs PullPush + Arctic Shift in parallel, reads comments on the 1-2 most relevant posts via Arctic Shift's comment tree API, and synthesizes.
 
-Reddit's official API became paid in 2023 (the change that killed Apollo and most third-party clients). This skill doesn't use it:
+### Sort strategy
 
-- **PullPush** is an independent archive — it doesn't call Reddit at all at query time.
-- **Reddit Buddy** reads Reddit's public `.json` endpoints (e.g. `reddit.com/r/python/top.json`), the same data your browser loads. These endpoints predate the API and Reddit can't easily close them without breaking their own site. Rate limit in anonymous mode: 10 req/min — sufficient for the ~3-4 calls a typical search makes.
+Arctic Shift supports three sort modes the skill uses selectively:
+- `score` — for "best X", "X vs Y", "should I use X" queries (evergreen recommendations)
+- `num_comments` — for advice threads and open-ended discussions
+- `date_desc` + `after: <epoch>` — for breaking topics from the last few days
+
+### Known limitations
+
+- **PullPush `num_comments` server-side filter is broken** — the skill filters manually after fetching.
+- **PullPush `after` only accepts Unix epoch timestamps** — relative formats like `"1y"` cause a 400 error.
+- **Arctic Shift `query` requires `subreddit` or `author`** — query-only calls return a 400 error.
+- **Reddit Buddy is frequently blocked** — don't rely on it for production queries.
+- **French subreddits** (r/france, r/AskFrance) have low post density on business/tech topics — the skill automatically runs an English-language equivalent subreddit in parallel.
 
 ## Prerequisites
 
-Install both MCP servers globally:
+Install all three MCP servers globally:
 
 ```bash
 npm install -g pullpush-mcp
 npm install -g reddit-mcp-buddy
+npm install -g arctic-shift-mcp
 ```
 
 ## Installation
@@ -54,6 +71,7 @@ npm install -g reddit-mcp-buddy
 ```bash
 claude mcp add pullpush /opt/homebrew/bin/pullpush-mcp --scope user
 claude mcp add reddit-buddy /opt/homebrew/bin/reddit-mcp-buddy --scope user
+claude mcp add arctic-shift /opt/homebrew/bin/arctic-shift-mcp --scope user
 ```
 
 Adjust the binary paths if npm installed them elsewhere (`which pullpush-mcp` to check).
@@ -65,7 +83,7 @@ On macOS:
 ~/Library/Application Support/Claude/local-agent-mode-sessions/skills-plugin/<plugin-id>/<session-id>/skills/reddit/SKILL.md
 ```
 
-The easiest way is to use the Claude Code skill-creator skill, or manually drop the file into the `skills/` directory alongside your other skills (e.g. next to `ridgewood/` if you have it).
+The easiest way is to use the Claude Code skill-creator skill, or manually drop the file into the `skills/` directory alongside your other skills.
 
 **3. Register the skill in `manifest.json`** in the same folder:
 
@@ -75,7 +93,7 @@ The easiest way is to use the Claude Code skill-creator skill, or manually drop 
   "name": "reddit",
   "description": "Search Reddit for real community opinions on any topic. Use only when explicitly invoked with /reddit.",
   "creatorType": "user",
-  "updatedAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-05T00:00:00.000Z",
   "enabled": true
 }
 ```
@@ -89,11 +107,6 @@ The easiest way is to use the Claude Code skill-creator skill, or manually drop 
 ## Notes
 
 - The skill is **never auto-triggered** — it only runs when you explicitly call `/reddit`. This is intentional.
-- PullPush archive ends ~May 2025. Reddit Buddy covers everything after. Both are used on every query.
 - No Reddit account or API credentials needed.
-
-## Future: Arctic-Shift
-
-[Arctic-Shift](https://github.com/ArthurHeitmann/arctic_shift) is another Reddit archive project, complementary to PullPush. It performs better on simple queries and served as the main alternative when PullPush went down for several months in 2023. It's worth knowing about as a fallback if PullPush ever goes offline again.
-
-There is no MCP server for Arctic-Shift yet. If one gets built, it would be worth adding alongside PullPush in this skill.
+- PullPush and Arctic Shift are independent archives — they don't call Reddit at query time.
+- Reddit Buddy reads Reddit's public `.json` endpoints (same data your browser loads). These endpoints predate the API and Reddit can't easily close them without breaking their own site — but Reddit does rate-limit and block them intermittently.
