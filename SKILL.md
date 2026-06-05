@@ -14,15 +14,14 @@ The user asked: **$ARGUMENTS**
 - **`mcp__pullpush__search_submissions`** — keyword search on posts. Rate limit: 15 req/min soft, 30 hard, 1000/hour.
 - **`mcp__pullpush__search_comments`** — keyword search on comments. No post ID filter (use arctic-shift for that).
 
-### Arctic Shift (archive up to ~February 2026)
-- **`mcp__arctic-shift__search_submissions`** — keyword search on posts, with `sort_by: num_comments` or `score` (client-side). Covers 9 more months than PullPush.
-- **`mcp__arctic-shift__search_comments`** — keyword search on comments with **working `link_id` filter** (get comments from a specific post).
-- **`mcp__arctic-shift__get_post_comments`** — full nested comment tree for a post by ID.
+### Arctic Shift (main source — covers today, full engagement data up to ~3-4 weeks ago)
+- **`mcp__arctic-shift__search_submissions`** — keyword search on posts. **Requires `subreddit` or `author` alongside `query`** — query-only calls return a 400 error.
+- **`mcp__arctic-shift__search_comments`** — keyword search on comments with **working `link_id` filter**.
+- **`mcp__arctic-shift__get_post_comments`** — full nested comment tree for a post by ID. Best option for fetching comments.
 
-### Reddit Buddy (real-time, last ~4 months)
-- **`mcp__reddit-buddy__search_reddit`** — live Reddit search. Use only for content from March 2026 onwards. May be unavailable if Reddit blocks the IP.
-- **`mcp__reddit-buddy__browse_subreddit`** — top/hot/new posts from a subreddit. Use `sort=top&time=year` for "best of" queries.
-- **`mcp__reddit-buddy__get_post_details`** — full post + comments. Always pass `subreddit` + `post_id` together (saves 1 API call).
+### Reddit Buddy (real-time — currently unreliable)
+- **`mcp__reddit-buddy__search_reddit`** and **`mcp__reddit-buddy__browse_subreddit`** — live Reddit access. **Frequently blocked by Reddit (access forbidden errors).** Try once; if it fails, skip and note the gap to the user. Do not retry.
+- **`mcp__reddit-buddy__get_post_details`** — full post + comments. Always pass both `post_id` AND `subreddit`.
 
 ## Step 1 — Identify target subreddits
 
@@ -34,39 +33,41 @@ Examples:
 - Coffee grinder recommendations → `r/Coffee`, `r/espresso`
 - Moving to Berlin → `r/berlin`, `r/germany`, `r/expats`
 
-If the query is in French or another language, also consider subreddits in that language.
+If the query is in French or another language, also consider the English-language equivalent subreddit — French subreddits (`r/france`, `r/AskFrance`) have much lower post density on business/tech topics. Always run both in parallel.
 
-**For "best of" queries** (recommendations, rankings): prefer `browse_subreddit` with `sort=top&time=year` — it gives directly the most upvoted content without keyword guessing.
+**For "best of" queries** (recommendations, rankings): use `arctic-shift__search_submissions` with `sort_by: score` — it returns the most upvoted posts directly.
 
-**For targeted queries**: check if the subreddit uses flairs and filter by the most relevant one. Examples:
-- `r/personalfinance` → flair "Investing", "Debt", "Retirement"
-- `r/Python` → flair "Discussion", "Tutorial"
+**For targeted queries**: filter by flair using `link_flair_text` in `mcp__arctic-shift__search_submissions` to reduce noise. Examples:
+- `r/personalfinance` → flair "Investing", "Debt"
+- `r/Python` → flair "Discussion"
 - `r/france` → flair "Société", "Économie"
-Use the `flair` parameter in `mcp__reddit-buddy__search_reddit` when a specific flair would sharply reduce noise.
 
 ## Step 2 — Search posts
 
-Each source covers an **exclusive, non-overlapping window**. Do NOT query two sources for the same period — they have the same data.
-
 ```
-2005 ──────────── May 2025   →  PullPush only
-         May 2025 ── Feb 2026  →  Arctic Shift only
-                  Feb 2026 ── now  →  Reddit Buddy only
+2005 ──────────── May 2025   →  PullPush (archive)
+May 2025 ────────────── now  →  Arctic Shift (full engagement data up to ~3-4 weeks ago; partial after)
+                              →  Reddit Buddy (real-time, but frequently blocked — try once only)
 ```
 
-**For most queries: run PullPush + Arctic Shift in parallel** (they cover complementary windows, not the same content). Add Reddit Buddy only if recency matters.
+**For most queries: run PullPush + Arctic Shift in parallel.** They cover different time windows.
 
 **PullPush** (2005 – May 2025):
-- `mcp__pullpush__search_submissions` with `size: 15`, `sort_type: num_comments`, `num_comments: ">3"`
+- `mcp__pullpush__search_submissions` with `size: 15`, `sort_type: num_comments`
 - Use `title` param for title-only matching (cleaner than `q`)
+- ⚠️ The `num_comments` server-side filter is broken — it does not filter reliably. After fetching, **manually skip posts with fewer than 3 comments**.
+- ⚠️ The `after` parameter only accepts **Unix epoch timestamps** — relative formats like "1y" or "30d" cause a 400 error. To restrict to recent posts, compute the epoch: e.g., June 2024 = `1717545600`. If unsure, skip `after` — `sort_type: num_comments` naturally surfaces recent high-engagement posts.
 
-**Arctic Shift** (May 2025 – February 2026):
-- `mcp__arctic-shift__search_submissions` with `limit: 15`, `sort_by: num_comments`
-- Supports `link_flair_text` for flair filtering
+**Arctic Shift** (May 2025 – today):
+- `mcp__arctic-shift__search_submissions` with `limit: 15`
+- **Always pass `subreddit` (or `author`) alongside `query` — query-only calls return a 400 error**
+- For recommendations, opinions, comparisons (evergreen): use `sort_by: score` — surfaces best posts across all time. Strongly preferred for "best X", "X vs Y", "should I use X" queries.
+- For discussions, advice threads: use `sort_by: num_comments` — surfaces most debated posts.
+- For recent/breaking topics (last few days): use `sort_by: date_desc` with `after: <epoch>` — engagement data for posts older than ~48h is reliable; very recent posts (< 24-48h) show `score: 1, comments: 0` and should be used for content only, not engagement signal.
 
-**Reddit Buddy** (February 2026 – today) — only if recency matters:
-- `mcp__reddit-buddy__search_reddit` with `sort: "comments"`, `time: "year"`
-- May be unavailable (Reddit IP blocking). If down: proceed without it and note the gap to the user.
+**Reddit Buddy** (real-time) — only if recency matters AND content is from the last few days:
+- Try `mcp__reddit-buddy__search_reddit` once with `sort: "comments"`, `time: "month"`
+- If it returns any error (blocked, forbidden, failed), skip entirely and note the gap to the user. Do not retry.
 
 **Select the 3-5 most relevant posts** across all sources based on title relevance and comment count.
 
@@ -74,11 +75,11 @@ Each source covers an **exclusive, non-overlapping window**. Do NOT query two so
 
 Only fetch comments for the **1-2 most promising posts**.
 
-**For archive posts (pre-Feb 2026):** use `mcp__arctic-shift__get_post_comments`:
+**For all archive posts (use Arctic Shift — works for any post):** use `mcp__arctic-shift__get_post_comments`:
 - `link_id: <post_id>`, `limit: 50`
-- Returns nested tree sorted by score — best option for archive posts
+- Returns nested tree sorted by score — best option
 
-**For recent posts (post-Feb 2026):** use `mcp__reddit-buddy__get_post_details`:
+**For very recent posts only (last few days, not yet in Arctic Shift):** use `mcp__reddit-buddy__get_post_details`:
 - Always pass both `post_id` AND `subreddit` (saves one API call)
 - `comment_sort: "best"`, `max_top_comments: 10`, `comment_limit: 20`
 
@@ -99,11 +100,12 @@ Keep the response concise. If the topic needs a list, use one. Match the languag
 
 ## Token efficiency rules
 
-- Max `size: 15` per search call, with server-side filters (`num_comments`, `score`) to reduce noise at the source
-- Comments for 1-2 posts max via `get_post_details`, always with `subreddit` param
+- Max `size: 15` per PullPush call, `limit: 15` per Arctic Shift call
+- After PullPush fetch, manually discard posts with fewer than 3 comments (server-side filter unreliable)
+- Comments for 1-2 posts max via `arctic-shift__get_post_comments`
 - Never quote raw comments — extract the insight only
 - Response: plain prose or short list, no tables, no headers per point
 
 ## Fallback
 
-If pullpush returns nothing relevant: try a different subreddit, rephrase the query, or switch to `browse_subreddit`. If reddit-buddy also returns nothing: tell the user the topic has low Reddit coverage and suggest alternatives.
+If PullPush + Arctic Shift return nothing relevant: try a different subreddit or rephrase the query. If the query is in French, also try the English-language equivalent subreddit. If all sources fail: tell the user the topic has low Reddit coverage and suggest alternatives (specialized forums, Stack Overflow, dedicated communities).
